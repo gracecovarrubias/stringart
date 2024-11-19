@@ -107,6 +107,29 @@ class StringArtGenerator:
 
         return pattern
 
+    def generate_stepwise(self):
+        """Generate pattern step by step and yield progress."""
+        self.data = self.data.astype(
+            np.float64)  # Ensure compatible type for subtraction
+        self.calculate_paths()
+        pattern = []
+        nail = self.seed
+        data_copy = copy.deepcopy(self.data)
+
+        for _ in range(self.iterations):
+            darkest_nail, darkest_path = self.choose_darkest_path(nail)
+            pattern.append(self.nodes[darkest_nail])
+            self.data -= self.weight * darkest_path
+            self.data[self.data < 0] = 0  # Ensure no negative values
+            if np.sum(self.data) == 0:
+                break
+            nail = darkest_nail
+            yield self.nodes[darkest_nail]  # Yield progress
+
+        self.data = data_copy  # Reset data after generation
+        self.residual = copy.deepcopy(self.data)
+        self.is_completed = True
+
     def choose_darkest_path(self, nail):
         max_darkness = -1.0
         for index, rowcol in enumerate(self.paths[nail]):
