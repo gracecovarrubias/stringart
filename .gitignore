@@ -1,3 +1,6 @@
+# ML
+*.pth
+
 # Editors
 .vscode/
 .idea/
