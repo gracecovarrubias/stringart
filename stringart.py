@@ -105,10 +105,11 @@ class StringArtGenerator:
 
         return torch.tensor(state, dtype=torch.float32)
 
-    def calculate_reward(self):
-        """Calculate the reward as the negative Mean Squared Error (MSE) to the original image."""
-        mse = np.mean((self.data - self.original_data) ** 2)
-        return -mse
+    def calculate_reward(self, before_update, after_update):
+        """Calculate the reward as the local improvement to the image."""
+        mse_before = np.mean((before_update - self.original_data) ** 2)
+        mse_after = np.mean((after_update - self.original_data) ** 2)
+        return mse_before - mse_after  # Positive reward for improvement
 
     def choose_next_nail(self, state, current_nail):
         """Use the RL model to choose the next nail."""
@@ -139,20 +140,26 @@ class StringArtGenerator:
 
     def generate_stepwise(self):
         """Generate pattern step by step and train the RL model."""
-        self.calculate_paths()  # Ensure paths are precomputed
+        self.calculate_paths()
         pattern = []
-        nail = self.seed
+        current_nail = self.seed  # Start at the seed nail
 
         for _ in range(self.iterations):
-            state = self.create_state(nail)
-            next_nail = self.choose_next_nail(state, nail)
+            # Create the state based on the current nail
+            state = self.create_state(current_nail)
+
+            # Choose the next nail
+            next_nail = self.choose_next_nail(state, current_nail)
 
             # Ensure the path is valid
-            path = self.paths[nail][next_nail]
+            path = self.paths[current_nail][next_nail]
             if not path:
                 print(f"No valid path from nail {
-                    nail} to nail {next_nail}. Skipping.")
+                    current_nail} to nail {next_nail}. Skipping.")
                 continue
+
+            # Save the state before updating
+            before_update = self.data.copy()
 
             # Update the image based on the path
             rows, cols = zip(*path)
@@ -160,8 +167,8 @@ class StringArtGenerator:
             self.data[self.data < 0] = 0  # Clamp negative values
             pattern.append(self.nodes[next_nail])
 
-            # Calculate reward and train the model
-            reward = self.calculate_reward()
+            # Calculate reward based on improvement
+            reward = self.calculate_reward(before_update, self.data)
             self.train_model(state, torch.tensor(
                 [next_nail]), torch.tensor([reward]))
 
@@ -169,7 +176,9 @@ class StringArtGenerator:
             if np.sum(self.data) == 0:
                 break
 
-            nail = next_nail
+            # Update the current nail to the newly selected nail
+            current_nail = next_nail
+
             yield self.nodes[next_nail]  # Yield progress
 
         return pattern
