@@ -3,14 +3,14 @@ from stringart import StringArtGenerator
 import torch
 
 # Initialize generator
-generator = StringArtGenerator(nails=100, iterations=1000, weight=20)
+generator = StringArtGenerator(nails=180, iterations=4000, weight=20)
 
 # Load and preprocess the image
 image_path = "./demo/input/Sample_ML.jpg"
 generator.load_image(image_path)
 generator.preprocess()
 generator.set_seed(0)
-generator.set_nails(100)
+generator.set_nails(180)
 
 generator.initialize_rl_model()
 
