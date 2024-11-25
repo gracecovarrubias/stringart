@@ -109,6 +109,8 @@ class StringArtGenerator:
         """Calculate the reward as the local improvement to the image."""
         mse_before = np.mean((before_update - self.original_data) ** 2)
         mse_after = np.mean((after_update - self.original_data) ** 2)
+        # print(f"Reward: {
+        #       mse_before - mse_after}, MSE Before: {mse_before}, MSE After: {mse_after}")
         return mse_before - mse_after  # Positive reward for improvement
 
     def choose_next_nail(self, state, current_nail):
