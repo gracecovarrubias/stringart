@@ -5,6 +5,10 @@ import torch.nn as nn
 import math
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 
 class StringArtGenerator:
     def __init__(self, nails=100, iterations=1000, weight=20):
@@ -28,9 +32,19 @@ class StringArtGenerator:
         image_size = self.data.size  # Total number of pixels in the image
         state_size = image_size + self.nails  # Image data + one-hot nail encoding
         self.model = StringArtRLModel(
-            state_size=state_size, action_size=self.nails)
+            # Move model to GPU
+            state_size=state_size, action_size=self.nails).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
-        print("RL model initialized with random weights.")
+        print("RL model initialized on", device)
+
+    def create_state(self, current_nail):
+        """Create a flattened state tensor for the RL model."""
+        flattened_image = self.data.flatten()
+        nail_one_hot = np.zeros(self.nails, dtype=np.float32)
+        nail_one_hot[current_nail] = 1.0
+        state = np.concatenate((flattened_image, nail_one_hot))
+        # Move to GPU
+        return torch.tensor(state, dtype=torch.float32).to(device)
 
     def set_seed(self, seed):
         self.seed = seed
@@ -91,20 +105,6 @@ class StringArtGenerator:
         path = list(zip(y_vals, x_vals))  # (row, col) format
         return [(y, x) for y, x in path if 0 <= y < self.data.shape[0] and 0 <= x < self.data.shape[1]]
 
-    def create_state(self, current_nail):
-        """Create a flattened state tensor for the RL model."""
-        # Flatten the current image state
-        flattened_image = self.data.flatten()
-
-        # Create a one-hot encoding for the current nail
-        nail_one_hot = np.zeros(self.nails, dtype=np.float32)
-        nail_one_hot[current_nail] = 1.0
-
-        # Combine image data and one-hot encoding into a single state
-        state = np.concatenate((flattened_image, nail_one_hot))
-
-        return torch.tensor(state, dtype=torch.float32)
-
     def calculate_reward(self, before_update, after_update):
         """Calculate the reward as the local improvement to the image."""
         mse_before = np.mean((before_update - self.original_data) ** 2)
@@ -155,7 +155,7 @@ class StringArtGenerator:
             path = self.paths[current_nail][next_nail]
             if not path:
                 print(f"No valid path from nail {
-                    current_nail} to nail {next_nail}. Skipping.")
+                      current_nail} to nail {next_nail}. Skipping.")
                 continue
 
             # Save the state before updating
@@ -170,7 +170,7 @@ class StringArtGenerator:
             # Calculate reward based on improvement
             reward = self.calculate_reward(before_update, self.data)
             self.train_model(state, torch.tensor(
-                [next_nail]), torch.tensor([reward]))
+                [next_nail]).to(device), torch.tensor([reward]).to(device))
 
             # Break if no brightness is left
             if np.sum(self.data) == 0:
