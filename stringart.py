@@ -4,7 +4,6 @@ import torch.optim as optim
 import torch.nn as nn
 import math
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
-import matplotlib.pyplot as plt
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -13,8 +12,8 @@ print(f"Using device: {device}")
 
 class StringArtGenerator:
     def __init__(self, nails=100, iterations=1000, weight=20):
-        self.iterations = iterations
         self.nails = nails
+        self.iterations = iterations
         self.weight = weight
         self.seed = 0
         self.image = None
@@ -24,20 +23,19 @@ class StringArtGenerator:
         self.paths = []
         self.model = None
         self.optimizer = None
-        self.loss_fn = nn.MSELoss()
-        self.previous_actions = []  # Track past actions for learning from mistakes
+        self.loss_fn = nn.CrossEntropyLoss()
 
     def initialize_rl_model(self):
         """Initialize the RL model."""
-        image_size = self.data.size  # Total number of pixels in the image
-        state_size = image_size + self.nails  # Image data + one-hot nail encoding
+        image_size = self.data.size
+        state_size = image_size + self.nails
         self.model = StringArtRLModel(
             state_size=state_size, action_size=self.nails).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         print("RL model initialized on", device)
 
     def preprocess(self):
-        """Preprocess the input image for string art."""
+        """Preprocess the input image."""
         self.image = ImageOps.grayscale(self.image)
         self.image = ImageOps.invert(self.image)
         self.image = self.image.filter(ImageFilter.EDGE_ENHANCE_MORE)
@@ -50,17 +48,19 @@ class StringArtGenerator:
         self._set_nodes()
 
     def _set_nodes(self):
-        """Sets nails evenly along a circle."""
-        spacing = (2 * math.pi) / self.nails
+        """Set nails evenly along a circle."""
         radius = self._get_radius()
+        angle_step = 2 * math.pi / self.nails
         self.nodes = [
-            (radius + radius * math.cos(i * spacing),
-             radius + radius * math.sin(i * spacing))
+            (
+                radius + radius * math.cos(i * angle_step),
+                radius + radius * math.sin(i * angle_step),
+            )
             for i in range(self.nails)
         ]
 
     def _get_radius(self):
-        return 0.5 * max(self.data.shape)
+        return min(self.data.shape) // 2
 
     def load_image(self, path):
         """Load and process an image."""
@@ -69,41 +69,37 @@ class StringArtGenerator:
         self.data = np.array(self.image, dtype=np.float64)
 
     def calculate_paths(self):
-        """Precompute all paths between nails."""
-        self.paths = []
-        for i in range(self.nails):
-            self.paths.append([])
-            for j in range(self.nails):
-                if i == j:
-                    self.paths[i].append([])  # No path for the same nail
-                    continue
-                path = self.interpolate_line(self.nodes[i], self.nodes[j])
-                self.paths[i].append(path)
+        """Precompute paths between all pairs of nails."""
+        self.paths = [
+            [self.bresenham_path(self.nodes[i], self.nodes[j])
+             for j in range(self.nails)]
+            for i in range(self.nails)
+        ]
 
-    def interpolate_line(self, start, end):
-        """Generate points along a line using interpolation."""
-        x1, y1 = start
-        x2, y2 = end
-        num_points = int(max(abs(x2 - x1), abs(y2 - y1)))
-        x_vals = np.linspace(x1, x2, num_points).astype(int)
-        y_vals = np.linspace(y1, y2, num_points).astype(int)
-        path = list(zip(y_vals, x_vals))
-        return [(y, x) for y, x in path if 0 <= y < self.data.shape[0] and 0 <= x < self.data.shape[1]]
+    def bresenham_path(self, start, end):
+        """Bresenham's Line Algorithm for generating pixel paths."""
+        x1, y1 = map(int, start)
+        x2, y2 = map(int, end)
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        sx = 1 if x1 < x2 else -1
+        sy = 1 if y1 < y2 else -1
+        err = dx - dy
+        path = []
 
-    def calculate_reward(self, after_update):
-        """Calculate reward based on MSE improvement."""
-        mse_current = np.mean((self.data - self.original_data) ** 2)
-        mse_new = np.mean((after_update - self.original_data) ** 2)
-        return mse_current - mse_new  # Reward is the improvement in MSE
-
-    def choose_next_nail(self, state, current_nail):
-        """Use the RL model to choose the next nail."""
-        self.model.eval()
-        with torch.no_grad():
-            logits = self.model(state)
-            probabilities = torch.softmax(logits, dim=-1)
-            next_nail = torch.argmax(probabilities).item()
-        return next_nail
+        while True:
+            if 0 <= y1 < self.data.shape[0] and 0 <= x1 < self.data.shape[1]:
+                path.append((y1, x1))
+            if x1 == x2 and y1 == y2:
+                break
+            e2 = err * 2
+            if e2 > -dy:
+                err -= dy
+                x1 += sx
+            if e2 < dx:
+                err += dx
+                y1 += sy
+        return path
 
     def create_state(self, current_nail):
         """Create a flattened state tensor for the RL model."""
@@ -112,6 +108,22 @@ class StringArtGenerator:
         nail_one_hot[current_nail] = 1.0
         state = np.concatenate((flattened_image, nail_one_hot))
         return torch.tensor(state, dtype=torch.float32).to(device)
+
+    def calculate_reward(self, after_update):
+        """Calculate reward based on MSE improvement."""
+        mse_current = np.mean((self.data - self.original_data) ** 2)
+        mse_new = np.mean((after_update - self.original_data) ** 2)
+        return mse_current - mse_new  # Reward is the improvement in MSE
+
+    def choose_next_nail(self, state):
+        """Use the RL model to predict the next nail."""
+        self.model.eval()
+        with torch.no_grad():
+            logits = self.model(state)
+            probabilities = torch.softmax(logits, dim=-1)
+            # Sample from probabilities
+            next_nail = torch.multinomial(probabilities, 1).item()
+        return next_nail
 
     def train_model(self, state, action, reward):
         """Train the RL model using the reward signal."""
@@ -123,49 +135,51 @@ class StringArtGenerator:
         loss.backward()
         self.optimizer.step()
 
-    def generate_stepwise(self):
-        """Generate pattern step by step and train the RL model."""
+    def generate(self):
+        """Generate the string art pattern using RL."""
         self.calculate_paths()
         current_nail = self.seed
-        print("Starting generation...")
+        pattern = []
 
-        for step in range(self.iterations):
+        for _ in range(self.iterations):
             state = self.create_state(current_nail)
-            next_nail = self.choose_next_nail(state, current_nail)
-
+            next_nail = self.choose_next_nail(state)
             path = self.paths[current_nail][next_nail]
+
             if not path:
-                print(f"Invalid path from nail {
+                print(f"No valid path from nail {
                       current_nail} to nail {next_nail}. Skipping.")
                 continue
 
-            # Save image state before updating
             before_update = self.data.copy()
-
-            # Update the image
             rows, cols = zip(*path)
             self.data[rows, cols] -= self.weight
-            self.data[self.data < 0] = 0  # Clamp values to 0
+            self.data[self.data < 0] = 0
 
-            # Calculate reward
-            reward = self.calculate_reward(before_update)
-
-            # Train the RL model
+            reward = self.calculate_reward(self.data)
             self.train_model(state, next_nail, reward)
 
-            print(
-                f"Step {step+1}/{self.iterations}: Nail {current_nail} -> Nail {next_nail}")
-
-            # Update the current nail
+            pattern.append((current_nail, next_nail))
             current_nail = next_nail
 
-            # Track past actions
-            self.previous_actions.append((current_nail, next_nail, reward))
+        return pattern
 
-            # Yield progress for visualization or debugging
-            yield (current_nail, next_nail, path)
+    def visualize_pattern(self, pattern):
+        """Visualize the generated string art pattern."""
+        import matplotlib.pyplot as plt
 
-        print("Generation complete.")
+        plt.figure(figsize=(8, 8))
+        plt.imshow(self.original_data, cmap="gray")
+        plt.axis("off")
+
+        for start, end in pattern:
+            start_node = self.nodes[start]
+            end_node = self.nodes[end]
+            plt.plot(
+                [start_node[0], end_node[0]], [start_node[1], end_node[1]], "r-", alpha=0.6
+            )
+
+        plt.show()
 
 
 class StringArtRLModel(nn.Module):
