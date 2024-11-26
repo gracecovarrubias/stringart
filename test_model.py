@@ -2,42 +2,51 @@ import matplotlib.pyplot as plt
 from stringart import StringArtGenerator
 import torch
 
-# Initialize generator
-generator = StringArtGenerator(nails=180, iterations=4000, weight=20)
+# Set the total number of nails and iterations
+total_nails = 25
+iterations = 100
+weight = 20
 
-# Load and preprocess the image
-image_path = "./demo/input/Sample_ML.jpg"
+# Initialize the StringArtGenerator
+generator = StringArtGenerator(
+    nails=total_nails, iterations=iterations, weight=weight)
+
+# Load and preprocess the input image
+# Replace with the actual path to your image
+image_path = "./demo/input/star.jpg"
 generator.load_image(image_path)
 generator.preprocess()
-generator.set_seed(0)
-generator.set_nails(180)
+generator.set_nails(total_nails)
 
+# Initialize and load the trained RL model
 generator.initialize_rl_model()
-
-# Load the trained model
 generator.model.load_state_dict(torch.load("string_art_rl_model.pth"))
-generator.model.eval()  # Set to evaluation mode
+generator.model.eval()  # Set the model to evaluation mode
 
-# Generate string art
+# Generate the string art pattern
 print("Generating string art...")
-pattern = list(generator.generate_stepwise())
+pattern = []
+for current_nail, next_nail, _ in generator.generate_stepwise():
+    pattern.append((current_nail, next_nail))
 
+# Visualize the generated string art pattern
 print("Displaying string art...")
-# Extract lines for visualization
 lines_x = []
 lines_y = []
-for i, j in zip(pattern, pattern[1:]):
-    lines_x.append((i[0], j[0]))
-    lines_y.append((i[1], j[1]))
+for current_nail, next_nail in pattern:
+    start_node = generator.nodes[current_nail]
+    end_node = generator.nodes[next_nail]
+    lines_x.append((start_node[0], end_node[0]))
+    lines_y.append((start_node[1], end_node[1]))
 
-# Visualize the string art pattern
+# Plot the string art pattern
 plt.figure(figsize=(8, 8))
 plt.axis("off")
 plt.xlim(0, generator.data.shape[1])
 plt.ylim(0, generator.data.shape[0])
 plt.gca().set_aspect("equal")
 
-# Draw lines
+# Draw lines connecting the nails
 for x, y in zip(lines_x, lines_y):
     plt.plot(x, y, color="black", linewidth=0.1)
 
