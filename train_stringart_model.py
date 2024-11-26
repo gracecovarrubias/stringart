@@ -1,16 +1,13 @@
 from stringart import StringArtGenerator
 import torch
-
-image_path = "./demo/input/star.jpg"
-nail_total = 200
-iterations = 2000
+import config
 
 # Set up the generator
 generator = StringArtGenerator(
-    nails=nail_total, iterations=iterations, weight=20)
-generator.load_image(image_path)
+    nails=config.NAILS, iterations=config.ITERATIONS, weight=config.WEIGHT)
+generator.load_image(config.IMAGE_PATH)
 generator.preprocess()
-generator.set_nails(nail_total)
+generator.set_nails(config.NAILS)
 generator.initialize_rl_model()
 
 # Train for multiple epochs

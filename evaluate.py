@@ -2,8 +2,7 @@ from stringart import StringArtGenerator
 from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import torch
-
-image_path = "./demo/input/star.jpg"
+import config
 
 
 def evaluate_model(generator, pattern):
@@ -21,11 +20,12 @@ def evaluate_model(generator, pattern):
 
 if __name__ == "__main__":
     # Create and set up the generator
-    generator = StringArtGenerator(nails=100, iterations=1000, weight=20)
+    generator = StringArtGenerator(
+        nails=config.NAILS, iterations=config.ITERATIONS, weight=config.WEIGHT)
     # Change to your test image path
-    generator.load_image(image_path)
+    generator.load_image(config.IMAGE_PATH)
     generator.preprocess()
-    generator.set_nails(100)
+    generator.set_nails(config.NAILS)
     generator.initialize_rl_model()
 
     # Load the trained model
