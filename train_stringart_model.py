@@ -11,7 +11,7 @@ generator.set_nails(config.NAILS)
 generator.initialize_rl_model()
 
 # Train for multiple epochs
-epochs = 100
+epochs = 2
 for epoch in range(epochs):
     print(f"Epoch {epoch + 1}/{epochs}")
     pattern = generator.generate()
