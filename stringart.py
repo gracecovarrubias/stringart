@@ -4,6 +4,8 @@ import torch.optim as optim
 import torch.nn as nn
 import math
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
+import random
+import torch.nn.functional as F
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,6 +78,8 @@ class StringArtGenerator:
             for i in range(self.nails)
         ]
 
+    
+
     def bresenham_path(self, start, end):
         """Bresenham's Line Algorithm for generating pixel paths."""
         x1, y1 = map(int, start)
@@ -89,7 +93,7 @@ class StringArtGenerator:
 
         while True:
             if 0 <= y1 < self.data.shape[0] and 0 <= x1 < self.data.shape[1]:
-                path.append((y1, x1))
+                path.append((y1, x1))  # Store coordinates as (y, x)
             if x1 == x2 and y1 == y2:
                 break
             e2 = err * 2
@@ -99,7 +103,9 @@ class StringArtGenerator:
             if e2 < dx:
                 err += dx
                 y1 += sy
+
         return path
+
 
     def create_state(self, current_nail):
         """Create a flattened state tensor for the RL model."""
@@ -109,59 +115,107 @@ class StringArtGenerator:
         state = np.concatenate((flattened_image, nail_one_hot))
         return torch.tensor(state, dtype=torch.float32).to(device)
 
+    
     def calculate_reward(self, after_update):
         """Calculate reward based on MSE improvement."""
+        # Create a copy of the current data
+        updated_data = self.data.copy()
+
+        # Apply the updates from the Bresenham path
+        for y, x in after_update:
+            if 0 <= y < updated_data.shape[0] and 0 <= x < updated_data.shape[1]:
+                updated_data[y, x] -= self.weight
+                if updated_data[y, x] < 0:
+                    updated_data[y, x] = 0
+
+        # Calculate MSE for the current and updated states
         mse_current = np.mean((self.data - self.original_data) ** 2)
-        mse_new = np.mean((after_update - self.original_data) ** 2)
+        mse_new = np.mean((updated_data - self.original_data) ** 2)
+
         return mse_current - mse_new  # Reward is the improvement in MSE
 
-    def choose_next_nail(self, state):
-        """Use the RL model to predict the next nail."""
-        self.model.eval()
-        with torch.no_grad():
-            logits = self.model(state)
-            probabilities = torch.softmax(logits, dim=-1)
-            # Sample from probabilities
-            next_nail = torch.multinomial(probabilities, 1).item()
-        return next_nail
 
-    def train_model(self, state, action, reward):
-        """Train the RL model using the reward signal."""
-        self.model.train()
-        self.optimizer.zero_grad()
-        logits = self.model(state)
-        log_prob = torch.log_softmax(logits, dim=-1)[action]
-        loss = -log_prob * reward
-        loss.backward()
-        self.optimizer.step()
+  
 
-    def generate(self):
-        """Generate the string art pattern using RL."""
-        self.calculate_paths()
-        current_nail = self.seed
+    def choose_next_nail(self, state, epsilon=0.1):
+        """
+        Choose the next nail using epsilon-greedy policy.
+        """
+        if random.random() < epsilon:
+            # Exploration: choose a random action
+            return random.randint(0, self.nails - 1)
+        else:
+            # Exploitation: choose the best action based on Q-values
+            with torch.no_grad():
+                q_values = self.model(state)
+                return torch.argmax(q_values).item()
+
+
+    
+
+    def train_model(self, state, action, reward, next_state, done, gamma=0.99):
+            """
+            Train the RL model using Q-learning updates.
+            """
+            # Get the predicted Q-values for the current state
+            q_values = self.model(state)
+
+            # Compute the target Q-value
+            with torch.no_grad():
+                q_next_values = self.model(next_state)
+                max_q_next = torch.max(q_next_values).item() if not done else 0.0
+                target_q_value = reward + gamma * max_q_next
+
+            # Update the Q-value for the selected action
+            target_q_values = q_values.clone().detach()
+            target_q_values[action] = target_q_value
+
+            # Compute the loss and backpropagate
+            loss = F.mse_loss(q_values, target_q_values)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+    
+    def generate(self, epsilon=0.1):
+        """
+        Generate the string art pattern using RL.
+        """
+        current_nail = 0
+        state = self.create_state(current_nail)
         pattern = []
-
+        
         for _ in range(self.iterations):
-            state = self.create_state(current_nail)
-            next_nail = self.choose_next_nail(state)
-            path = self.paths[current_nail][next_nail]
+            action = self.choose_next_nail(state, epsilon)
+            next_nail = action
+            self.paths.append((current_nail, next_nail))
 
-            if not path:
-                print(f"No valid path from nail {
-                      current_nail} to nail {next_nail}. Skipping.")
-                continue
+            # Simulate the environment transition
+            # updated_image = self.bresenham_path(current_nail, next_nail)
 
-            before_update = self.data.copy()
-            rows, cols = zip(*path)
-            self.data[rows, cols] -= self.weight
-            self.data[self.data < 0] = 0
+            # Simulate the transition using Bresenham's path
+            updated_image = self.bresenham_path(self.nodes[current_nail], self.nodes[next_nail])
 
-            reward = self.calculate_reward(self.data)
-            self.train_model(state, next_nail, reward)
+            # Calculate the reward for the action
+            reward = self.calculate_reward(updated_image)
 
+            # Apply the updates from Bresenham to the actual data
+            for y, x in updated_image:
+                if 0 <= y < self.data.shape[0] and 0 <= x < self.data.shape[1]:
+                    self.data[y, x] -= self.weight
+                    if self.data[y, x] < 0:
+                        self.data[y, x] = 0
+
+            next_state = self.create_state(next_nail)
+            done = False  # Define termination condition if needed
+
+            # Train the RL model
+            self.train_model(state, action, reward, next_state, done)
+
+            # Update state and nail
+            state = next_state
             pattern.append((current_nail, next_nail))
             current_nail = next_nail
-
         return pattern
 
     def visualize_pattern(self, pattern):
