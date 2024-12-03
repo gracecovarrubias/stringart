@@ -15,11 +15,15 @@ the algorithm starts calculating the best route (that is the route with the high
 darkness) to the next nail. This procedure is continued until a maximum number
 of iterations is reached or the simulated picture matches the input.
 
+# Demo Video
+
+> [Youtube](https://youtu.be/vE8cyxziEBI)
+
 ## Usage
 
 To run the project, we recommend using the devcontainer.
 
-To open the project in the devcontainer in vscode, use `ctrl + shift + p` to access the avaiolable commands and select `reopen in devcontainer`.
+To open the project in the devcontainer in vscode, use `ctrl + shift + p` to access the available commands and select `reopen in devcontainer`.
 
 ## Notes
 
