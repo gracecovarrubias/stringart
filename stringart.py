@@ -78,8 +78,6 @@ class StringArtGenerator:
             for i in range(self.nails)
         ]
 
-    
-
     def bresenham_path(self, start, end):
         """Bresenham's Line Algorithm for generating pixel paths."""
         x1, y1 = map(int, start)
@@ -106,7 +104,6 @@ class StringArtGenerator:
 
         return path
 
-
     def create_state(self, current_nail):
         """Create a flattened state tensor for the RL model."""
         flattened_image = self.data.flatten()
@@ -115,7 +112,6 @@ class StringArtGenerator:
         state = np.concatenate((flattened_image, nail_one_hot))
         return torch.tensor(state, dtype=torch.float32).to(device)
 
-    
     def calculate_reward(self, after_update):
         """Calculate reward based on MSE improvement."""
         # Create a copy of the current data
@@ -134,9 +130,6 @@ class StringArtGenerator:
 
         return mse_current - mse_new  # Reward is the improvement in MSE
 
-
-  
-
     def choose_next_nail(self, state, epsilon=0.1):
         """
         Choose the next nail using epsilon-greedy policy.
@@ -150,33 +143,29 @@ class StringArtGenerator:
                 q_values = self.model(state)
                 return torch.argmax(q_values).item()
 
-
-    
-
     def train_model(self, state, action, reward, next_state, done, gamma=0.99):
-            """
-            Train the RL model using Q-learning updates.
-            """
-            # Get the predicted Q-values for the current state
-            q_values = self.model(state)
+        """
+        Train the RL model using Q-learning updates.
+        """
+        # Get the predicted Q-values for the current state
+        q_values = self.model(state)
 
-            # Compute the target Q-value
-            with torch.no_grad():
-                q_next_values = self.model(next_state)
-                max_q_next = torch.max(q_next_values).item() if not done else 0.0
-                target_q_value = reward + gamma * max_q_next
+        # Compute the target Q-value
+        with torch.no_grad():
+            q_next_values = self.model(next_state)
+            max_q_next = torch.max(q_next_values).item() if not done else 0.0
+            target_q_value = reward + gamma * max_q_next
 
-            # Update the Q-value for the selected action
-            target_q_values = q_values.clone().detach()
-            target_q_values[action] = target_q_value
+        # Update the Q-value for the selected action
+        target_q_values = q_values.clone().detach()
+        target_q_values[action] = target_q_value
 
-            # Compute the loss and backpropagate
-            loss = F.mse_loss(q_values, target_q_values)
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+        # Compute the loss and backpropagate
+        loss = F.mse_loss(q_values, target_q_values)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
-    
     def generate(self, epsilon=0.1):
         """
         Generate the string art pattern using RL.
@@ -184,7 +173,7 @@ class StringArtGenerator:
         current_nail = 0
         state = self.create_state(current_nail)
         pattern = []
-        
+
         for _ in range(self.iterations):
             action = self.choose_next_nail(state, epsilon)
             next_nail = action
@@ -194,7 +183,8 @@ class StringArtGenerator:
             # updated_image = self.bresenham_path(current_nail, next_nail)
 
             # Simulate the transition using Bresenham's path
-            updated_image = self.bresenham_path(self.nodes[current_nail], self.nodes[next_nail])
+            updated_image = self.bresenham_path(
+                self.nodes[current_nail], self.nodes[next_nail])
 
             # Calculate the reward for the action
             reward = self.calculate_reward(updated_image)
